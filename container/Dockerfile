@@ -24,7 +24,15 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     curl \
     git \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Install pdf2zh for PDF translation
+RUN python3 -m venv /opt/pdf2zh && \
+    /opt/pdf2zh/bin/pip install --no-cache-dir pdf2zh==1.9.11 boto3
+ENV PATH="/opt/pdf2zh/bin:${PATH}"
 
 # Set Chromium path for agent-browser
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
@@ -32,6 +40,10 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Install agent-browser and claude-code globally
 RUN npm install -g agent-browser @anthropic-ai/claude-code
+
+# Install pdf-translate CLI into PATH
+COPY skills/pdf-translator/pdf-translate /usr/local/bin/pdf-translate
+COPY skills/pdf-translator/s3-upload /usr/local/bin/s3-upload
 
 # Create app directory
 WORKDIR /app

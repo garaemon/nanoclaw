@@ -1,0 +1,170 @@
+#!/bin/bash
+# Translate a PDF from a URL using pdf2zh.
+# Handles arxiv URLs, direct PDF URLs, and local files.
+# All progress output goes to stderr. stdout contains ONLY the upload URLs.
+
+set -euo pipefail
+
+TARGET_LANG="ja"
+SOURCE_LANG="en"
+OUTPUT_DIR="/workspace/group/translated-pdfs"
+PAGES=""
+UPLOAD=false
+
+usage() {
+  echo "Usage: pdf-translate <url-or-path> [-l target_lang] [-s source_lang] [-o output_dir] [-p pages] [--upload]" >&2
+  exit 1
+}
+
+if [ $# -lt 1 ]; then
+  usage
+fi
+
+INPUT="$1"
+shift
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l) TARGET_LANG="$2"; shift 2 ;;
+    -s) SOURCE_LANG="$2"; shift 2 ;;
+    -o) OUTPUT_DIR="$2"; shift 2 ;;
+    -p) PAGES="$2"; shift 2 ;;
+    --upload) UPLOAD=true; shift ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
+  esac
+done
+
+mkdir -p "$OUTPUT_DIR"
+
+# Load Gemini API key from credentials file for pdf2zh translation
+CREDS_FILE="${S3_CREDENTIALS_FILE:-/workspace/extra/s3-upload-key/credentials.json}"
+if [ -f "$CREDS_FILE" ]; then
+  GEMINI_KEY=$(python3 -c "import json; d=json.load(open('$CREDS_FILE')); print(d.get('gemini_api_key',''))" 2>/dev/null)
+  if [ -n "$GEMINI_KEY" ]; then
+    export GEMINI_API_KEY="$GEMINI_KEY"
+    export GEMINI_MODEL="gemini-3.1-flash-lite"
+  fi
+fi
+
+resolve_pdf_url() {
+  local url="$1"
+
+  if echo "$url" | grep -qE 'arxiv\.org/abs/'; then
+    local arxiv_id
+    arxiv_id=$(echo "$url" | sed -E 's|.*/abs/([^?#]+).*|\1|')
+    echo "https://arxiv.org/pdf/${arxiv_id}.pdf"
+    return
+  fi
+
+  if echo "$url" | grep -qE 'arxiv\.org/pdf/'; then
+    if ! echo "$url" | grep -qE '\.pdf$'; then
+      echo "${url}.pdf"
+    else
+      echo "$url"
+    fi
+    return
+  fi
+
+  if echo "$url" | grep -qE 'arxiv\.org/html/'; then
+    local arxiv_id
+    arxiv_id=$(echo "$url" | sed -E 's|.*/html/([^?#]+).*|\1|')
+    echo "https://arxiv.org/pdf/${arxiv_id}.pdf"
+    return
+  fi
+
+  echo "$url"
+}
+
+download_pdf() {
+  local url="$1"
+  local output_path="$2"
+
+  echo "Downloading PDF from: $url" >&2
+  if ! curl -fsSL -o "$output_path" -A "Mozilla/5.0" "$url"; then
+    echo "ERROR: Failed to download PDF from $url" >&2
+    exit 1
+  fi
+
+  if ! head -c 5 "$output_path" | grep -q '%PDF'; then
+    echo "ERROR: Downloaded file is not a valid PDF" >&2
+    rm -f "$output_path"
+    exit 1
+  fi
+
+  echo "Downloaded: $output_path ($(du -h "$output_path" | cut -f1))" >&2
+}
+
+translate_pdf() {
+  local pdf_path="$1"
+  local basename
+  basename=$(basename "$pdf_path" .pdf)
+
+  echo "Translating: $pdf_path ($SOURCE_LANG -> $TARGET_LANG)" >&2
+
+  local args=("-li" "$SOURCE_LANG" "-lo" "$TARGET_LANG")
+  if [ -n "${GEMINI_API_KEY:-}" ]; then
+    args+=("-s" "gemini")
+    echo "Using Gemini ($GEMINI_MODEL) for translation" >&2
+  fi
+  if [ -n "$PAGES" ]; then
+    args+=("-p" "$PAGES")
+  fi
+
+  cd "$OUTPUT_DIR"
+  if ! pdf2zh "$pdf_path" "${args[@]}" >&2; then
+    echo "ERROR: pdf2zh translation failed" >&2
+    exit 1
+  fi
+
+  echo "Translation complete." >&2
+
+  local mono="${OUTPUT_DIR}/${basename}-mono.pdf"
+  local dual="${OUTPUT_DIR}/${basename}-dual.pdf"
+  local urls_file="${OUTPUT_DIR}/upload-urls.txt"
+
+  # Upload to S3 and write message file with URLs
+  if [ "$UPLOAD" = true ]; then
+    local mono_url="" dual_url=""
+    if [ -f "$mono" ]; then
+      echo "Uploading $(basename "$mono")..." >&2
+      mono_url=$(s3-upload "$mono")
+    fi
+    if [ -f "$dual" ]; then
+      echo "Uploading $(basename "$dual")..." >&2
+      dual_url=$(s3-upload "$dual")
+    fi
+    # Write ready-to-send message file
+    local msg_file="${OUTPUT_DIR}/upload-message.txt"
+    {
+      echo "翻訳PDFのダウンロードリンク:"
+      echo ""
+      if [ -n "$mono_url" ]; then
+        echo "翻訳版: $mono_url"
+      fi
+      if [ -n "$dual_url" ]; then
+        echo "対訳版: $dual_url"
+      fi
+    } > "$msg_file"
+    echo "Message saved to $msg_file" >&2
+  fi
+}
+
+# Main logic
+if [ -f "$INPUT" ]; then
+  translate_pdf "$(realpath "$INPUT")"
+elif echo "$INPUT" | grep -qE '^https?://'; then
+  PDF_URL=$(resolve_pdf_url "$INPUT")
+  echo "Resolved PDF URL: $PDF_URL" >&2
+
+  FILENAME=$(echo "$PDF_URL" | sed -E 's|.*/||; s|\?.*||')
+  if ! echo "$FILENAME" | grep -qE '\.pdf$'; then
+    FILENAME="${FILENAME}.pdf"
+  fi
+
+  DOWNLOAD_PATH="${OUTPUT_DIR}/${FILENAME}"
+  download_pdf "$PDF_URL" "$DOWNLOAD_PATH"
+  translate_pdf "$DOWNLOAD_PATH"
+else
+  echo "ERROR: Input must be a URL or existing file path" >&2
+  exit 1
+fi

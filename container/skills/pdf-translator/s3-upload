@@ -1,0 +1,76 @@
+#!/opt/pdf2zh/bin/python3
+"""Upload a file to S3 and print an AWS Console link."""
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime
+from urllib.parse import quote
+
+import boto3
+
+
+DEFAULT_CREDS_PATH = "/workspace/extra/s3-upload-key/credentials.json"
+
+
+def load_credentials(creds_path):
+    with open(creds_path) as f:
+        return json.load(f)
+
+
+def build_s3_client(creds):
+    return boto3.client(
+        "s3",
+        aws_access_key_id=creds["aws_access_key_id"],
+        aws_secret_access_key=creds["aws_secret_access_key"],
+        region_name=creds["region"],
+    )
+
+
+def build_console_url(bucket, s3_key, region):
+    encoded_key = quote(s3_key, safe="")
+    return (
+        f"https://{region}.console.aws.amazon.com"
+        f"/s3/object/{bucket}?prefix={encoded_key}"
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Upload file to S3 and print AWS Console link")
+    parser.add_argument("file", help="Local file path to upload")
+    parser.add_argument("--creds", default=os.environ.get("S3_CREDENTIALS_FILE", DEFAULT_CREDS_PATH),
+                        help="Path to credentials JSON file")
+    parser.add_argument("--prefix", default="pdf-translations",
+                        help="S3 key prefix (default: pdf-translations)")
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.file):
+        print(f"ERROR: File not found: {args.file}", file=sys.stderr)
+        sys.exit(1)
+
+    if not os.path.isfile(args.creds):
+        print(f"ERROR: Credentials file not found: {args.creds}", file=sys.stderr)
+        print("Set up S3 credentials at ~/.config/nanoclaw/s3-upload-key/credentials.json", file=sys.stderr)
+        sys.exit(1)
+
+    creds = load_credentials(args.creds)
+    required_keys = ["aws_access_key_id", "aws_secret_access_key", "region", "bucket"]
+    missing = [k for k in required_keys if k not in creds]
+    if missing:
+        print(f"ERROR: Missing keys in credentials: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
+    filename = os.path.basename(args.file)
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    s3_key = f"{args.prefix}/{timestamp}-{filename}"
+
+    client = build_s3_client(creds)
+    client.upload_file(args.file, creds["bucket"], s3_key)
+
+    console_url = build_console_url(creds["bucket"], s3_key, creds["region"])
+    print(console_url)
+
+
+if __name__ == "__main__":
+    main()
