@@ -41,7 +41,9 @@ Four types of skills exist in NanoClaw. See [CONTRIBUTING.md](CONTRIBUTING.md) f
 
 ## Contributing
 
-Before creating a PR, adding a skill, or preparing any contribution, you MUST read [CONTRIBUTING.md](CONTRIBUTING.md). It covers accepted change types, the four skill types and their guidelines, SKILL.md format rules, PR requirements, and the pre-submission checklist (searching for existing PRs/issues, testing, description format).
+This is a personal fork. Do NOT create pull requests. Push directly to `main`. Do NOT push to upstream (`qwibitai/nanoclaw`). Always verify `git remote -v` before pushing.
+
+Before adding a skill, you MUST read [CONTRIBUTING.md](CONTRIBUTING.md). It covers accepted change types, the four skill types and their guidelines, SKILL.md format rules, and the pre-submission checklist.
 
 ## Development
 
