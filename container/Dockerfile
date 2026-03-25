@@ -45,6 +45,10 @@ RUN npm install -g agent-browser @anthropic-ai/claude-code
 COPY skills/pdf-translator/pdf-translate /usr/local/bin/pdf-translate
 COPY skills/pdf-translator/s3-upload /usr/local/bin/s3-upload
 
+# Install spotify-sheets CLI (googleapis is needed at runtime)
+RUN npm install -g googleapis
+COPY skills/spotify-sheets/spotify-sheets /usr/local/bin/spotify-sheets
+
 # Create app directory
 WORKDIR /app
 

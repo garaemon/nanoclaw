@@ -12,8 +12,10 @@ import {
   CONTAINER_TIMEOUT,
   CREDENTIAL_PROXY_PORT,
   DATA_DIR,
+  GOOGLE_SA_KEY_FILE,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  SPOTIFY_SPREADSHEET_ID,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -199,6 +201,15 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Mount Google service account key for Sheets API access (spotify-sheets skill)
+  if (fs.existsSync(GOOGLE_SA_KEY_FILE)) {
+    mounts.push({
+      hostPath: GOOGLE_SA_KEY_FILE,
+      containerPath: '/secrets/google-sheets-sa.json',
+      readonly: true,
+    });
+  }
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(
@@ -236,6 +247,12 @@ function buildContainerArgs(
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  // Spotify Sheets integration
+  if (SPOTIFY_SPREADSHEET_ID) {
+    args.push('-e', `SPOTIFY_SPREADSHEET_ID=${SPOTIFY_SPREADSHEET_ID}`);
+    args.push('-e', 'GOOGLE_SA_KEY_FILE=/secrets/google-sheets-sa.json');
   }
 
   // Runtime-specific args for host gateway resolution

@@ -6,7 +6,11 @@ import { readEnvFile } from './env.js';
 // Read config values from .env (falls back to process.env).
 // Secrets (API keys, tokens) are NOT read here — they are loaded only
 // by the credential proxy (credential-proxy.ts), never exposed to containers.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER']);
+const envConfig = readEnvFile([
+  'ASSISTANT_NAME',
+  'ASSISTANT_HAS_OWN_NUMBER',
+  'SPOTIFY_SPREADSHEET_ID',
+]);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
@@ -61,6 +65,14 @@ export const MAX_CONCURRENT_CONTAINERS = Math.max(
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+// Spotify Google Sheets integration
+export const SPOTIFY_SPREADSHEET_ID =
+  process.env.SPOTIFY_SPREADSHEET_ID || envConfig.SPOTIFY_SPREADSHEET_ID || '';
+export const GOOGLE_SA_KEY_FILE = path.resolve(
+  PROJECT_ROOT,
+  'spotify-google-sheets.keys.json',
+);
 
 export const TRIGGER_PATTERN = new RegExp(
   `^@${escapeRegex(ASSISTANT_NAME)}\\b`,
