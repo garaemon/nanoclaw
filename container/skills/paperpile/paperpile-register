@@ -1,0 +1,307 @@
+#!/bin/bash
+# Register a PDF paper to Paperpile, translate it, and attach the translated PDF.
+#
+# Workflow:
+# 1. Download PDF if URL
+# 2. Upload to Paperpile (auto-extracts metadata)
+# 3. Find the new item in Paperpile library (title, authors, year)
+# 4. Rename original PDF to "Title - FirstAuthor Year.pdf"
+# 5. Translate with pdf2zh to produce -dual.pdf
+# 6. Attach -dual.pdf to the Paperpile item
+# 7. Optionally upload to S3
+
+set -euo pipefail
+
+OUTPUT_DIR="/workspace/group/paperpile"
+TARGET_LANG="ja"
+SOURCE_LANG="en"
+PAGES=""
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: paperpile-register <url-or-path> [options]
+
+Options:
+  -l <lang>      Target language (default: ja)
+  -s <lang>      Source language (default: en)
+  -p <pages>     Page range (e.g., 1-5,8)
+  -o <dir>       Output directory (default: /workspace/group/paperpile)
+EOF
+  exit 1
+}
+
+if [ $# -lt 1 ]; then
+  usage
+fi
+
+INPUT="$1"
+shift
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l) TARGET_LANG="$2"; shift 2 ;;
+    -s) SOURCE_LANG="$2"; shift 2 ;;
+    -p) PAGES="$2"; shift 2 ;;
+    -o) OUTPUT_DIR="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
+  esac
+done
+
+mkdir -p "$OUTPUT_DIR"
+
+# Load Gemini API key for pdf2zh
+CREDS_FILE="${S3_CREDENTIALS_FILE:-/workspace/extra/s3-upload-key/credentials.json}"
+if [ -f "$CREDS_FILE" ]; then
+  GEMINI_KEY=$(python3 -c "import json; d=json.load(open('$CREDS_FILE')); print(d.get('gemini_api_key',''))" 2>/dev/null)
+  if [ -n "$GEMINI_KEY" ]; then
+    export GEMINI_API_KEY="$GEMINI_KEY"
+    export GEMINI_MODEL="gemini-3-flash-preview"
+  fi
+fi
+
+resolve_pdf_url() {
+  local url="$1"
+  if echo "$url" | grep -qE 'arxiv\.org/abs/'; then
+    local arxiv_id
+    arxiv_id=$(echo "$url" | sed -E 's|.*/abs/([^?#]+).*|\1|')
+    echo "https://arxiv.org/pdf/${arxiv_id}.pdf"
+    return
+  fi
+  if echo "$url" | grep -qE 'arxiv\.org/pdf/'; then
+    if ! echo "$url" | grep -qE '\.pdf$'; then
+      echo "${url}.pdf"
+    else
+      echo "$url"
+    fi
+    return
+  fi
+  if echo "$url" | grep -qE 'arxiv\.org/html/'; then
+    local arxiv_id
+    arxiv_id=$(echo "$url" | sed -E 's|.*/html/([^?#]+).*|\1|')
+    echo "https://arxiv.org/pdf/${arxiv_id}.pdf"
+    return
+  fi
+  echo "$url"
+}
+
+download_pdf() {
+  local url="$1"
+  local output_path="$2"
+  echo "Downloading PDF from: $url" >&2
+  if ! curl -fsSL -o "$output_path" -A "Mozilla/5.0" "$url"; then
+    echo "ERROR: Failed to download PDF from $url" >&2
+    exit 1
+  fi
+  if ! head -c 5 "$output_path" | grep -q '%PDF'; then
+    echo "ERROR: Downloaded file is not a valid PDF" >&2
+    rm -f "$output_path"
+    exit 1
+  fi
+  echo "Downloaded: $output_path ($(du -h "$output_path" | cut -f1))" >&2
+}
+
+# Sanitize a string for use as a filename (remove/replace problematic characters)
+sanitize_filename() {
+  echo "$1" | sed -E 's/[\/\\:*?"<>|]/ /g; s/  +/ /g; s/^ //; s/ $//'
+}
+
+# Snapshot current Paperpile library item IDs
+snapshot_item_ids() {
+  paperpile-cli list 2>/dev/null | tail -n +2 | awk '{print $1}' | sort
+}
+
+# Find a newly added Paperpile item by comparing before/after snapshots.
+# Outputs the new item's line from `paperpile-cli list`.
+find_new_item_id() {
+  local before_file="$1"
+  local max_attempts=10
+  local attempt=0
+
+  while [ $attempt -lt $max_attempts ]; do
+    sleep 3
+    attempt=$((attempt + 1))
+    echo "Polling for new item (attempt $attempt/$max_attempts)..." >&2
+
+    local new_ids
+    new_ids=$(comm -13 "$before_file" <(snapshot_item_ids))
+    if [ -n "$new_ids" ]; then
+      local new_id
+      new_id=$(echo "$new_ids" | head -1)
+      echo "$new_id"
+      return 0
+    fi
+  done
+
+  echo "ERROR: Timed out waiting for Paperpile to process the upload" >&2
+  return 1
+}
+
+# Extract metadata for an item from `paperpile-cli list` output
+extract_metadata() {
+  local item_id="$1"
+  paperpile-cli list 2>/dev/null | grep "^${item_id}"
+}
+
+# Format filename as "Title - FirstAuthor Year"
+format_paperpile_filename() {
+  local title="$1"
+  local first_author="$2"
+  local year="$3"
+
+  local sanitized_title
+  sanitized_title=$(sanitize_filename "$title")
+
+  # Truncate very long titles
+  if [ ${#sanitized_title} -gt 100 ]; then
+    sanitized_title="${sanitized_title:0:100}"
+  fi
+
+  local filename="${sanitized_title} - ${first_author} ${year}"
+  echo "$filename"
+}
+
+# ── Main ──
+
+# Step 1: Resolve and download PDF if URL
+PDF_PATH=""
+if [ -f "$INPUT" ]; then
+  PDF_PATH="$(realpath "$INPUT")"
+elif echo "$INPUT" | grep -qE '^https?://'; then
+  PDF_URL=$(resolve_pdf_url "$INPUT")
+  echo "Resolved PDF URL: $PDF_URL" >&2
+  FILENAME=$(echo "$PDF_URL" | sed -E 's|.*/||; s|\?.*||')
+  if ! echo "$FILENAME" | grep -qE '\.pdf$'; then
+    FILENAME="${FILENAME}.pdf"
+  fi
+  PDF_PATH="${OUTPUT_DIR}/${FILENAME}"
+  download_pdf "$PDF_URL" "$PDF_PATH"
+else
+  echo "ERROR: Input must be a URL or existing file path" >&2
+  exit 1
+fi
+
+# Step 2: Snapshot current library and upload to Paperpile
+echo "Taking snapshot of current Paperpile library..." >&2
+BEFORE_IDS=$(mktemp)
+snapshot_item_ids > "$BEFORE_IDS"
+
+echo "Uploading to Paperpile: $(basename "$PDF_PATH")" >&2
+paperpile-cli upload "$PDF_PATH" >&2
+
+# Step 3: Find the new item
+echo "Waiting for Paperpile to process the upload..." >&2
+NEW_ITEM_ID=$(find_new_item_id "$BEFORE_IDS")
+rm -f "$BEFORE_IDS"
+
+if [ -z "$NEW_ITEM_ID" ]; then
+  echo "ERROR: Could not find the newly uploaded item" >&2
+  exit 1
+fi
+
+echo "New Paperpile item: $NEW_ITEM_ID" >&2
+
+# Step 4: Extract metadata
+METADATA=$(extract_metadata "$NEW_ITEM_ID")
+echo "Metadata: $METADATA" >&2
+
+# Parse tab-separated fields: ID  YEAR  FIRST_AUTHOR  TITLE
+ITEM_YEAR=$(echo "$METADATA" | awk -F'\t' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}')
+FIRST_AUTHOR=$(echo "$METADATA" | awk -F'\t' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $3); print $3}')
+ITEM_TITLE=$(echo "$METADATA" | awk -F'\t' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4); print $4}')
+
+if [ -z "$ITEM_TITLE" ] || [ "$ITEM_TITLE" = "-" ]; then
+  ITEM_TITLE="Untitled"
+fi
+if [ -z "$FIRST_AUTHOR" ] || [ "$FIRST_AUTHOR" = "-" ]; then
+  FIRST_AUTHOR="Unknown"
+fi
+if [ -z "$ITEM_YEAR" ] || [ "$ITEM_YEAR" = "-" ]; then
+  ITEM_YEAR="Unknown"
+fi
+
+# Step 5: Rename original PDF to Paperpile-style name
+PRETTY_NAME=$(format_paperpile_filename "$ITEM_TITLE" "$FIRST_AUTHOR" "$ITEM_YEAR")
+PRETTY_PDF="${OUTPUT_DIR}/${PRETTY_NAME}.pdf"
+
+if [ "$PDF_PATH" != "$PRETTY_PDF" ]; then
+  cp "$PDF_PATH" "$PRETTY_PDF"
+  echo "Renamed to: $(basename "$PRETTY_PDF")" >&2
+fi
+
+# Step 6: Translate with pdf2zh
+echo "Translating: $(basename "$PRETTY_PDF") ($SOURCE_LANG -> $TARGET_LANG)" >&2
+
+TRANSLATE_ARGS=("-li" "$SOURCE_LANG" "-lo" "$TARGET_LANG")
+if [ -n "${GEMINI_API_KEY:-}" ]; then
+  TRANSLATE_ARGS+=("-s" "gemini")
+  echo "Using Gemini ($GEMINI_MODEL) for translation" >&2
+fi
+if [ -n "$PAGES" ]; then
+  TRANSLATE_ARGS+=("-p" "$PAGES")
+fi
+
+cd "$OUTPUT_DIR"
+if ! pdf2zh "$PRETTY_PDF" "${TRANSLATE_ARGS[@]}" >&2; then
+  echo "ERROR: pdf2zh translation failed" >&2
+  exit 1
+fi
+echo "Translation complete." >&2
+
+# Rename translated PDFs to include language label
+RAW_DUAL="${OUTPUT_DIR}/${PRETTY_NAME}-dual.pdf"
+RAW_MONO="${OUTPUT_DIR}/${PRETTY_NAME}-mono.pdf"
+DUAL_PDF="${OUTPUT_DIR}/${PRETTY_NAME} (${TARGET_LANG} dual).pdf"
+MONO_PDF="${OUTPUT_DIR}/${PRETTY_NAME} (${TARGET_LANG} translated).pdf"
+if [ -f "$RAW_DUAL" ]; then
+  mv "$RAW_DUAL" "$DUAL_PDF"
+fi
+if [ -f "$RAW_MONO" ]; then
+  mv "$RAW_MONO" "$MONO_PDF"
+fi
+
+# Step 7: Attach translated PDF to Paperpile item
+if [ -f "$DUAL_PDF" ]; then
+  echo "Attaching translated PDF to Paperpile item $NEW_ITEM_ID..." >&2
+  paperpile-cli attach "$NEW_ITEM_ID" "$DUAL_PDF" >&2
+  echo "Attached: $(basename "$DUAL_PDF")" >&2
+else
+  echo "WARNING: Dual PDF not found at $DUAL_PDF, skipping attach" >&2
+fi
+
+# Step 8: Upload to S3 and capture console URLs
+DUAL_S3_URL=""
+MONO_S3_URL=""
+if [ -f "$DUAL_PDF" ]; then
+  echo "Uploading $(basename "$DUAL_PDF") to S3..." >&2
+  DUAL_S3_URL=$(s3-upload "$DUAL_PDF" --prefix "paperpile") || echo "WARNING: S3 upload failed for dual PDF" >&2
+fi
+if [ -f "$MONO_PDF" ]; then
+  echo "Uploading $(basename "$MONO_PDF") to S3..." >&2
+  MONO_S3_URL=$(s3-upload "$MONO_PDF" --prefix "paperpile") || echo "WARNING: S3 upload failed for mono PDF" >&2
+fi
+
+# Step 9: Write summary
+SUMMARY_FILE="${OUTPUT_DIR}/summary.txt"
+{
+  echo "PAPERPILE_ITEM_ID=$NEW_ITEM_ID"
+  echo "TITLE=$ITEM_TITLE"
+  echo "FIRST_AUTHOR=$FIRST_AUTHOR"
+  echo "YEAR=$ITEM_YEAR"
+  echo "ORIGINAL_PDF=$PRETTY_PDF"
+  echo "DUAL_PDF=$DUAL_PDF"
+  echo "MONO_PDF=$MONO_PDF"
+  if [ -n "$DUAL_S3_URL" ]; then
+    echo "DUAL_S3_URL=$DUAL_S3_URL"
+  fi
+  if [ -n "$MONO_S3_URL" ]; then
+    echo "MONO_S3_URL=$MONO_S3_URL"
+  fi
+} > "$SUMMARY_FILE"
+
+echo "" >&2
+echo "=== Summary ===" >&2
+echo "Title: $ITEM_TITLE" >&2
+echo "Author: $FIRST_AUTHOR" >&2
+echo "Year: $ITEM_YEAR" >&2
+echo "Paperpile ID: $NEW_ITEM_ID" >&2
+echo "Files: $(basename "$PRETTY_PDF"), $(basename "$DUAL_PDF")" >&2

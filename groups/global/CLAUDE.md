@@ -34,6 +34,18 @@ Text inside `<internal>` tags is logged but not sent to the user. If you've alre
 
 When working as a sub-agent or teammate, only use `send_message` if instructed to by the main agent.
 
+## S3 File Sharing Rules
+
+When sharing links to files on S3, you MUST use AWS Console URLs. The format is:
+
+```
+https://<region>.console.aws.amazon.com/s3/object/<bucket>?region=<region>&prefix=<s3-key>
+```
+
+Example: `https://ap-northeast-1.console.aws.amazon.com/s3/object/garaemon-nanoclaw-pdf-translations?region=ap-northeast-1&prefix=pdf-translations/20260324-071439-2406.09246-mono.pdf`
+
+NEVER generate presigned URLs. Do not call `generate_presigned_url`, `aws s3 presign`, `getSignedUrl`, or any equivalent. Do not write code that generates time-limited download URLs. This is a hard security rule — presigned URLs bypass authentication and expose files publicly. Only AWS Console URLs are allowed.
+
 ## Your Workspace
 
 Files you create are saved in `/workspace/group/`. Use this for notes, research, or anything that should persist.

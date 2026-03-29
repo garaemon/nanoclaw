@@ -6,8 +6,6 @@ import json
 import os
 import sys
 from datetime import datetime
-from urllib.parse import quote
-
 import boto3
 
 
@@ -28,16 +26,8 @@ def build_s3_client(creds):
     )
 
 
-def build_console_url(bucket, s3_key, region):
-    encoded_key = quote(s3_key, safe="")
-    return (
-        f"https://{region}.console.aws.amazon.com"
-        f"/s3/object/{bucket}?prefix={encoded_key}"
-    )
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Upload file to S3 and print AWS Console link")
+    parser = argparse.ArgumentParser(description="Upload file to S3 for backup")
     parser.add_argument("file", help="Local file path to upload")
     parser.add_argument("--creds", default=os.environ.get("S3_CREDENTIALS_FILE", DEFAULT_CREDS_PATH),
                         help="Path to credentials JSON file")
@@ -68,7 +58,12 @@ def main():
     client = build_s3_client(creds)
     client.upload_file(args.file, creds["bucket"], s3_key)
 
-    console_url = build_console_url(creds["bucket"], s3_key, creds["region"])
+    region = creds["region"]
+    console_url = (
+        f"https://{region}.console.aws.amazon.com"
+        f"/s3/object/{creds['bucket']}"
+        f"?region={region}&prefix={s3_key}"
+    )
     print(console_url)
 
 

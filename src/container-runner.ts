@@ -13,6 +13,7 @@ import {
   DATA_DIR,
   GOOGLE_SA_KEY_FILE,
   GROUPS_DIR,
+  PAPERPILE_CONFIG_FILE,
   IDLE_TIMEOUT,
   ONECLI_URL,
   SPOTIFY_SPREADSHEET_ID,
@@ -217,6 +218,16 @@ function buildVolumeMounts(
     mounts.push({
       hostPath: GOOGLE_SA_KEY_FILE,
       containerPath: '/secrets/google-sheets-sa.json',
+      readonly: true,
+    });
+  }
+
+  // Mount Paperpile CLI session config (read-only) so agents can register papers.
+  // Setup: cp ~/.config/paperpile-cli/config.yaml ~/.config/nanoclaw/paperpile-cli.config.yaml
+  if (fs.existsSync(PAPERPILE_CONFIG_FILE)) {
+    mounts.push({
+      hostPath: PAPERPILE_CONFIG_FILE,
+      containerPath: '/home/node/.config/paperpile-cli/config.yaml',
       readonly: true,
     });
   }

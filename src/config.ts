@@ -77,6 +77,14 @@ export const GOOGLE_SA_KEY_FILE = path.resolve(
   'spotify-google-sheets.keys.json',
 );
 
+// Paperpile CLI session config (copied from ~/.config/paperpile-cli/config.yaml)
+export const PAPERPILE_CONFIG_FILE = path.join(
+  os.homedir(),
+  '.config',
+  'nanoclaw',
+  'paperpile-cli.config.yaml',
+);
+
 export function buildTriggerPattern(trigger: string): RegExp {
   return new RegExp(`^${escapeRegex(trigger.trim())}\\b`, 'i');
 }

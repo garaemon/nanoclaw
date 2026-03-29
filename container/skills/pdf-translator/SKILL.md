@@ -43,7 +43,7 @@ pdf-translate /workspace/group/paper.pdf --upload
 | `-s` | Source language | `en` |
 | `-o` | Output directory | `/workspace/group/translated-pdfs` |
 | `-p` | Page range (e.g., `1-5,8`) | all pages |
-| `--upload` | Upload results to S3 and print download URLs | off |
+| `--upload` | Backup results to S3 | off |
 
 ## Output
 
@@ -52,7 +52,7 @@ The tool produces two files:
 - `<name>-mono.pdf` - Fully translated document
 - `<name>-dual.pdf` - Bilingual side-by-side comparison
 
-With `--upload`, files are uploaded to a private S3 bucket and AWS Console links are printed. Only users logged into the AWS account can access the files.
+With `--upload`, files are uploaded to a private S3 bucket. AWS Console URLs are saved for sharing.
 
 ## When to use
 
@@ -63,21 +63,21 @@ Use this skill when:
 
 Always use `--upload` so the user can download the translated PDF.
 
-## CRITICAL: How to share download links
+## IMPORTANT: Never generate presigned URLs
 
-After `pdf-translate --upload` finishes, it saves a ready-to-send message at:
-`/workspace/group/translated-pdfs/upload-message.txt`
+Do NOT generate presigned S3 URLs (via `generate_presigned_url`, `aws s3 presign`, or any other method). Only share the AWS Console URLs produced by `s3-upload`. Presigned URLs bypass authentication and expose files publicly.
 
-You MUST use the Read tool to read this file, then include its FULL content in your response.
-The file contains AWS Console URLs starting with `https://`. These URLs are long — that is expected. Do NOT shorten, truncate, or extract parts of them.
+## How to share results
+
+After `pdf-translate --upload` finishes, read `/workspace/group/translated-pdfs/upload-message.txt` and include the AWS Console URLs in your response. These URLs require AWS login to access.
 
 ## Example workflow
 
 1. User sends: "Translate this paper: https://arxiv.org/abs/2301.12345"
 2. **Immediately** use `send_message` to acknowledge the request
 3. Run: `pdf-translate https://arxiv.org/abs/2301.12345 --upload`
-4. Use the **Read** tool to read `/workspace/group/translated-pdfs/upload-message.txt`
-5. Send the file's content to the user verbatim using `send_message`, along with a brief paper summary
+4. Read `/workspace/group/translated-pdfs/upload-message.txt`
+5. Send the user the AWS Console URLs along with a brief paper summary
 
 **Important**: Always acknowledge the translation request first before starting the translation. The translation can take several minutes, so the user should know their request was received.
 

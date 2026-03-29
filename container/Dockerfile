@@ -1,6 +1,11 @@
 # NanoClaw Agent Container
 # Runs Claude Agent SDK in isolated Linux VM with browser automation
 
+# ── Stage 1: Build paperpile-cli from source ──
+FROM golang:1.26-bookworm AS paperpile-cli-builder
+RUN go install github.com/garaemon/paperpile-cli@latest
+
+# ── Stage 2: Main container ──
 FROM node:22-slim
 
 # Install system dependencies for Chromium
@@ -44,6 +49,12 @@ RUN npm install -g agent-browser @anthropic-ai/claude-code
 # Install pdf-translate CLI into PATH
 COPY skills/pdf-translator/pdf-translate /usr/local/bin/pdf-translate
 COPY skills/pdf-translator/s3-upload /usr/local/bin/s3-upload
+
+# Copy paperpile-cli binary from builder stage (no Go toolchain in final image)
+COPY --from=paperpile-cli-builder /go/bin/paperpile-cli /usr/local/bin/paperpile-cli
+
+# Install paperpile-register CLI into PATH
+COPY skills/paperpile/paperpile-register /usr/local/bin/paperpile-register
 
 # Install spotify-sheets CLI (googleapis is needed at runtime)
 RUN npm install -g googleapis

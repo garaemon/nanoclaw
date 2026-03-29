@@ -42,7 +42,7 @@ if [ -f "$CREDS_FILE" ]; then
   GEMINI_KEY=$(python3 -c "import json; d=json.load(open('$CREDS_FILE')); print(d.get('gemini_api_key',''))" 2>/dev/null)
   if [ -n "$GEMINI_KEY" ]; then
     export GEMINI_API_KEY="$GEMINI_KEY"
-    export GEMINI_MODEL="gemini-3.1-flash-lite"
+    export GEMINI_MODEL="gemini-3-flash-preview"
   fi
 fi
 
@@ -120,29 +120,25 @@ translate_pdf() {
 
   local mono="${OUTPUT_DIR}/${basename}-mono.pdf"
   local dual="${OUTPUT_DIR}/${basename}-dual.pdf"
-  local urls_file="${OUTPUT_DIR}/upload-urls.txt"
 
-  # Upload to S3 and write message file with URLs
+  # Upload to S3 and write console URLs
   if [ "$UPLOAD" = true ]; then
     local mono_url="" dual_url=""
     if [ -f "$mono" ]; then
-      echo "Uploading $(basename "$mono")..." >&2
-      mono_url=$(s3-upload "$mono")
+      echo "Uploading $(basename "$mono") to S3..." >&2
+      mono_url=$(s3-upload "$mono") || echo "WARNING: S3 upload failed for mono PDF" >&2
     fi
     if [ -f "$dual" ]; then
-      echo "Uploading $(basename "$dual")..." >&2
-      dual_url=$(s3-upload "$dual")
+      echo "Uploading $(basename "$dual") to S3..." >&2
+      dual_url=$(s3-upload "$dual") || echo "WARNING: S3 upload failed for dual PDF" >&2
     fi
-    # Write ready-to-send message file
     local msg_file="${OUTPUT_DIR}/upload-message.txt"
     {
-      echo "翻訳PDFのダウンロードリンク:"
-      echo ""
       if [ -n "$mono_url" ]; then
-        echo "翻訳版: $mono_url"
+        echo "Translated: $mono_url"
       fi
       if [ -n "$dual_url" ]; then
-        echo "対訳版: $dual_url"
+        echo "Bilingual: $dual_url"
       fi
     } > "$msg_file"
     echo "Message saved to $msg_file" >&2
