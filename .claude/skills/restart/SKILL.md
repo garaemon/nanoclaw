@@ -18,7 +18,7 @@ docker ps -q --filter "name=nanoclaw" | xargs -r docker stop
 2. Rebuild the container image:
 
 ```bash
-./container/build.sh
+CONTAINER_RUNTIME=docker ./container/build.sh
 ```
 
 3. Clear all session IDs from SQLite:
