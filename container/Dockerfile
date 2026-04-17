@@ -43,8 +43,8 @@ ENV PATH="/opt/pdf2zh/bin:${PATH}"
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install agent-browser and claude-code globally
-RUN npm install -g agent-browser @anthropic-ai/claude-code
+# Install agent-browser, claude-code, and QMD globally
+RUN npm install -g agent-browser @anthropic-ai/claude-code @tobilu/qmd
 
 # Install pdf-translate CLI into PATH
 COPY skills/pdf-translator/pdf-translate /usr/local/bin/pdf-translate
