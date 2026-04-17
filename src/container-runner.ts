@@ -247,6 +247,7 @@ async function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
   agentIdentifier?: string,
+  env?: Record<string, string>,
 ): Promise<string[]> {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
@@ -279,6 +280,12 @@ async function buildContainerArgs(
   if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
     args.push('--user', `${hostUid}:${hostGid}`);
     args.push('-e', 'HOME=/home/node');
+  }
+
+  if (env) {
+    for (const [key, value] of Object.entries(env)) {
+      args.push('-e', `${key}=${value}`);
+    }
   }
 
   for (const mount of mounts) {
@@ -316,6 +323,7 @@ export async function runContainerAgent(
     mounts,
     containerName,
     agentIdentifier,
+    group.containerConfig?.env,
   );
 
   logger.debug(
