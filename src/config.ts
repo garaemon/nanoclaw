@@ -11,7 +11,6 @@ const envConfig = readEnvFile([
   'ONECLI_URL',
   'ONECLI_API_KEY',
   'TZ',
-  'SPOTIFY_SPREADSHEET_ID',
 ]);
 
 export const ASSISTANT_NAME =
@@ -70,22 +69,6 @@ export const MAX_CONCURRENT_CONTAINERS = Math.max(
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
-// Spotify Google Sheets integration
-export const SPOTIFY_SPREADSHEET_ID =
-  process.env.SPOTIFY_SPREADSHEET_ID || envConfig.SPOTIFY_SPREADSHEET_ID || '';
-export const GOOGLE_SA_KEY_FILE = path.resolve(
-  PROJECT_ROOT,
-  'spotify-google-sheets.keys.json',
-);
-
-// Paperpile CLI session config (copied from ~/.config/paperpile-cli/config.yaml)
-export const PAPERPILE_CONFIG_FILE = path.join(
-  os.homedir(),
-  '.config',
-  'nanoclaw',
-  'paperpile-cli.config.yaml',
-);
 
 export function buildTriggerPattern(trigger: string): RegExp {
   return new RegExp(`^${escapeRegex(trigger.trim())}\\b`, 'i');

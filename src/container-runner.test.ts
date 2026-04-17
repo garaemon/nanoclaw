@@ -13,11 +13,9 @@ vi.mock('./config.js', () => ({
   CONTAINER_TIMEOUT: 1800000, // 30min
   DATA_DIR: '/tmp/nanoclaw-test-data',
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
-  GOOGLE_SA_KEY_FILE: '/tmp/nanoclaw-test-sa.json',
   IDLE_TIMEOUT: 1800000, // 30min
   ONECLI_API_KEY: '',
   ONECLI_URL: 'http://localhost:10254',
-  SPOTIFY_SPREADSHEET_ID: '',
   TIMEZONE: 'America/Los_Angeles',
 }));
 

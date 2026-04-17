@@ -11,13 +11,10 @@ import {
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
   DATA_DIR,
-  GOOGLE_SA_KEY_FILE,
   GROUPS_DIR,
-  PAPERPILE_CONFIG_FILE,
   IDLE_TIMEOUT,
   ONECLI_API_KEY,
   ONECLI_URL,
-  SPOTIFY_SPREADSHEET_ID,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -233,25 +230,6 @@ function buildVolumeMounts(
     readonly: false,
   });
 
-  // Mount Google service account key for Sheets API access (spotify-sheets skill)
-  if (fs.existsSync(GOOGLE_SA_KEY_FILE)) {
-    mounts.push({
-      hostPath: GOOGLE_SA_KEY_FILE,
-      containerPath: '/secrets/google-sheets-sa.json',
-      readonly: true,
-    });
-  }
-
-  // Mount Paperpile CLI session config (read-only) so agents can register papers.
-  // Setup: cp ~/.config/paperpile-cli/config.yaml ~/.config/nanoclaw/paperpile-cli.config.yaml
-  if (fs.existsSync(PAPERPILE_CONFIG_FILE)) {
-    mounts.push({
-      hostPath: PAPERPILE_CONFIG_FILE,
-      containerPath: '/home/node/.config/paperpile-cli/config.yaml',
-      readonly: true,
-    });
-  }
-
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(
@@ -288,12 +266,6 @@ async function buildContainerArgs(
       { containerName },
       'OneCLI gateway not reachable — container will have no credentials',
     );
-  }
-
-  // Spotify Sheets integration
-  if (SPOTIFY_SPREADSHEET_ID) {
-    args.push('-e', `SPOTIFY_SPREADSHEET_ID=${SPOTIFY_SPREADSHEET_ID}`);
-    args.push('-e', 'GOOGLE_SA_KEY_FILE=/secrets/google-sheets-sa.json');
   }
 
   // Runtime-specific args for host gateway resolution
