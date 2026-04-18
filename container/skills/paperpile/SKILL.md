@@ -1,7 +1,7 @@
 ---
 name: paperpile
 description: Register PDF papers to Paperpile, translate with pdf2zh, attach translated PDF, and return a summary. Use when a user shares a PDF paper or arxiv link.
-allowed-tools: Bash(paperpile-register:*),Bash(paperpile-cli:*)
+allowed-tools: Bash(paperpile-register:*),Bash(paperpile:*)
 ---
 
 # Paperpile Registration with Translation
@@ -10,7 +10,7 @@ Register academic papers to Paperpile and automatically translate them.
 
 ## CRITICAL: Always use `paperpile-register`
 
-You MUST use the `paperpile-register` CLI for the entire workflow. Do NOT implement any step manually — no manual downloads, no direct `pdf2zh` calls, no direct `paperpile-cli upload`, no direct `s3-upload`, no Python scripts. The `paperpile-register` script handles everything: download, upload, metadata extraction, rename, translation, attach, and S3 backup.
+You MUST use the `paperpile-register` CLI for the entire workflow. Do NOT implement any step manually — no manual downloads, no direct `pdf2zh` calls, no direct `paperpile upload`, no direct `s3-upload`, no Python scripts. The `paperpile-register` script handles everything: download, upload, metadata extraction, rename, translation, attach, and S3 backup.
 
 ## Quick start
 
@@ -77,11 +77,11 @@ Do NOT generate your own S3 URLs. Only use the URLs from `summary.txt`.
 4. Read `/workspace/group/paperpile/summary.txt` for metadata and URLs
 5. Send the user a summary with the information from summary.txt
 
-## Direct paperpile-cli usage
+## Direct paperpile usage
 
 For manual operations only (not for the registration workflow):
 
 ```bash
-paperpile-cli list              # List all library items
-paperpile-cli me                # Show account info
+paperpile list              # List all library items
+paperpile me                # Show account info
 ```

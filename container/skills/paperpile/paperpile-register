@@ -107,11 +107,11 @@ sanitize_filename() {
 
 # Snapshot current Paperpile library item IDs
 snapshot_item_ids() {
-  paperpile-cli list 2>/dev/null | tail -n +2 | awk '{print $1}' | sort
+  paperpile list 2>/dev/null | tail -n +2 | awk '{print $1}' | sort
 }
 
 # Find a newly added Paperpile item by comparing before/after snapshots.
-# Outputs the new item's line from `paperpile-cli list`.
+# Outputs the new item's line from `paperpile list`.
 find_new_item_id() {
   local before_file="$1"
   local max_attempts=10
@@ -136,10 +136,10 @@ find_new_item_id() {
   return 1
 }
 
-# Extract metadata for an item from `paperpile-cli list` output
+# Extract metadata for an item from `paperpile list` output
 extract_metadata() {
   local item_id="$1"
-  paperpile-cli list 2>/dev/null | grep "^${item_id}"
+  paperpile list 2>/dev/null | grep "^${item_id}"
 }
 
 # Format filename as "Title - FirstAuthor Year"
@@ -186,7 +186,7 @@ BEFORE_IDS=$(mktemp)
 snapshot_item_ids > "$BEFORE_IDS"
 
 echo "Uploading to Paperpile: $(basename "$PDF_PATH")" >&2
-paperpile-cli upload "$PDF_PATH" >&2
+paperpile upload "$PDF_PATH" >&2
 
 # Step 3: Find the new item
 echo "Waiting for Paperpile to process the upload..." >&2
@@ -262,7 +262,7 @@ fi
 # Step 7: Attach translated PDF to Paperpile item
 if [ -f "$DUAL_PDF" ]; then
   echo "Attaching translated PDF to Paperpile item $NEW_ITEM_ID..." >&2
-  paperpile-cli attach "$NEW_ITEM_ID" "$DUAL_PDF" >&2
+  paperpile attach "$NEW_ITEM_ID" "$DUAL_PDF" >&2
   echo "Attached: $(basename "$DUAL_PDF")" >&2
 else
   echo "WARNING: Dual PDF not found at $DUAL_PDF, skipping attach" >&2

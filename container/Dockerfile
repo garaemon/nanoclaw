@@ -1,9 +1,9 @@
 # NanoClaw Agent Container
 # Runs Claude Agent SDK in isolated Linux VM with browser automation
 
-# ── Stage 1: Build paperpile-cli from source ──
-FROM golang:1.26-bookworm AS paperpile-cli-builder
-RUN go install github.com/garaemon/paperpile-cli@latest
+# ── Stage 1: Build paperpile from source ──
+FROM golang:1.26-bookworm AS paperpile-builder
+RUN go install github.com/garaemon/paperpile@latest
 
 # ── Stage 2: Main container ──
 FROM node:22-slim
@@ -50,8 +50,8 @@ RUN npm install -g agent-browser @anthropic-ai/claude-code @tobilu/qmd
 COPY skills/pdf-translator/pdf-translate /usr/local/bin/pdf-translate
 COPY skills/pdf-translator/s3-upload /usr/local/bin/s3-upload
 
-# Copy paperpile-cli binary from builder stage (no Go toolchain in final image)
-COPY --from=paperpile-cli-builder /go/bin/paperpile-cli /usr/local/bin/paperpile-cli
+# Copy paperpile binary from builder stage (no Go toolchain in final image)
+COPY --from=paperpile-builder /go/bin/paperpile /usr/local/bin/paperpile
 
 # Install paperpile-register CLI into PATH
 COPY skills/paperpile/paperpile-register /usr/local/bin/paperpile-register
